@@ -23,6 +23,7 @@ const QuizEditor = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [subject, setSubject] = useState('matematika');
+  const [topic, setTopic] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [questions, setQuestions] = useState<QuizQuestion[]>([createEmptyQuestion()]);
   const [isPublished, setIsPublished] = useState(false);
@@ -52,6 +53,7 @@ const QuizEditor = () => {
       setTitle(data.title);
       setDescription(data.description || '');
       setSubject(data.subject || 'matematika');
+      setTopic((data as any).topic || '');
       setGradeLevel(data.grade_level || '');
       setQuestions((data.questions as unknown as QuizQuestion[]) || []);
       setIsPublished(data.is_published);
@@ -79,6 +81,7 @@ const QuizEditor = () => {
       title: title.trim(),
       description: description.trim(),
       subject,
+      topic: topic.trim(),
       grade_level: gradeLevel,
       questions: JSON.parse(JSON.stringify(questions)),
       is_published: isPublished,
@@ -171,8 +174,19 @@ const QuizEditor = () => {
                   <option value="magyar">Magyar nyelv</option>
                   <option value="természettudomány">Természettudomány</option>
                   <option value="történelem">Történelem</option>
+                  <option value="földrajz">Földrajz</option>
+                  <option value="informatika">Informatika</option>
+                  <option value="angol">Angol nyelv</option>
                   <option value="egyéb">Egyéb</option>
                 </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Témakör</Label>
+                <Input
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="pl. Törtek, Összeadás..."
+                />
               </div>
               <div className="space-y-2">
                 <Label>Évfolyam</Label>

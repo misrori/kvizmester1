@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Play, Square, SkipForward, Copy, Users, ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
+import { Play, Square, SkipForward, Copy, Users, ArrowLeft, CheckCircle2, XCircle, Trophy, BarChart3, RefreshCw } from 'lucide-react';
 import type { Room, Quiz, QuizQuestion, RoomParticipant, QuizAnswer } from '@/types/quiz';
 
 const RoomControl = () => {
@@ -19,6 +19,7 @@ const RoomControl = () => {
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
   const [answers, setAnswers] = useState<QuizAnswer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   const fetchRoomData = useCallback(async () => {
     if (!id || !user) return;
@@ -89,6 +90,7 @@ const RoomControl = () => {
       .from('rooms')
       .update({ status: 'active', started_at: new Date().toISOString(), current_question_index: 0 })
       .eq('id', room.id);
+    setShowLeaderboard(false);
     toast.success('Kvíz elindítva!');
   };
 
@@ -103,6 +105,7 @@ const RoomControl = () => {
       .from('rooms')
       .update({ current_question_index: nextIndex })
       .eq('id', room.id);
+    setShowLeaderboard(false);
   };
 
   const endQuiz = async () => {
@@ -114,10 +117,40 @@ const RoomControl = () => {
     toast.success('Kvíz befejezve!');
   };
 
+  const restartRoom = async () => {
+    if (!room) return;
+    // Delete old answers and participants
+    await Promise.all([
+      supabase.from('quiz_answers').delete().eq('room_id', room.id),
+      supabase.from('room_participants').delete().eq('room_id', room.id),
+    ]);
+    // Reset room state
+    await supabase.from('rooms').update({
+      status: 'waiting',
+      current_question_index: 0,
+      started_at: null,
+      ended_at: null,
+    }).eq('id', room.id);
+    setAnswers([]);
+    setParticipants([]);
+    setShowLeaderboard(false);
+    toast.success('Szoba újraindítva! A diákok újra csatlakozhatnak.');
+  };
+
   const copyCode = () => {
     if (!room) return;
     navigator.clipboard.writeText(room.code);
     toast.success('Szobakód másolva: ' + room.code);
+  };
+
+  // Calculate leaderboard
+  const getLeaderboard = () => {
+    return participants.map((p) => {
+      const studentAnswers = answers.filter((a) => a.participant_id === p.id);
+      const totalScore = studentAnswers.reduce((sum, a) => sum + ((a as any).score || 0), 0);
+      const correctCount = studentAnswers.filter((a) => a.is_correct).length;
+      return { ...p, totalScore, correctCount, answered: studentAnswers.length };
+    }).sort((a, b) => b.totalScore - a.totalScore);
   };
 
   if (authLoading || loading) {
@@ -136,6 +169,7 @@ const RoomControl = () => {
   const currentQuestion: QuizQuestion | undefined = quiz.questions[room.current_question_index];
   const answersForCurrentQ = answers.filter((a) => a.question_index === room.current_question_index);
   const totalParticipants = participants.filter((p) => p.is_active).length;
+  const leaderboard = getLeaderboard();
 
   return (
     <div className="min-h-screen bg-background">
@@ -163,7 +197,7 @@ const RoomControl = () => {
             <Users className="h-4 w-4" />
             {totalParticipants} diák
           </div>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap gap-2">
             {room.status === 'waiting' && (
               <Button onClick={startQuiz} disabled={totalParticipants === 0}>
                 <Play className="mr-2 h-4 w-4" />
@@ -171,10 +205,16 @@ const RoomControl = () => {
               </Button>
             )}
             {room.status === 'active' && room.control_mode === 'manual' && (
-              <Button onClick={nextQuestion}>
-                <SkipForward className="mr-2 h-4 w-4" />
-                {room.current_question_index + 1 >= quiz.questions.length ? 'Befejezés' : 'Következő kérdés'}
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setShowLeaderboard(!showLeaderboard)}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  {showLeaderboard ? 'Kérdés' : 'Ranglista'}
+                </Button>
+                <Button onClick={nextQuestion}>
+                  <SkipForward className="mr-2 h-4 w-4" />
+                  {room.current_question_index + 1 >= quiz.questions.length ? 'Befejezés' : 'Következő kérdés'}
+                </Button>
+              </>
             )}
             {room.status === 'active' && (
               <Button variant="destructive" onClick={endQuiz}>
@@ -183,15 +223,21 @@ const RoomControl = () => {
               </Button>
             )}
             {room.status === 'completed' && (
-              <Button variant="outline" asChild>
-                <a href={`/results/${room.id}`}>Eredmények</a>
-              </Button>
+              <>
+                <Button variant="outline" onClick={restartRoom}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Újraindítás
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href={`/results/${room.id}`}>Eredmények</a>
+                </Button>
+              </>
             )}
           </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Current Question */}
+          {/* Current Question / Leaderboard */}
           <div className="lg:col-span-2">
             {room.status === 'waiting' && (
               <Card>
@@ -203,7 +249,41 @@ const RoomControl = () => {
                 </CardContent>
               </Card>
             )}
-            {room.status === 'active' && currentQuestion && (
+
+            {room.status === 'active' && showLeaderboard && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Trophy className="h-5 w-5 text-accent" />
+                    Ranglista
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {leaderboard.map((student, i) => (
+                      <div key={student.id} className={`flex items-center justify-between rounded-lg border p-3 ${i === 0 ? 'border-accent bg-accent/10' : i === 1 ? 'border-secondary bg-secondary/10' : i === 2 ? 'border-primary bg-primary/10' : ''}`}>
+                        <div className="flex items-center gap-3">
+                          <span className="font-display text-lg font-bold text-muted-foreground w-8">{i + 1}.</span>
+                          <span className="font-medium">{student.student_name}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-quiz-green" />
+                            {student.correctCount}
+                          </div>
+                          <div className="flex items-center gap-1 font-display font-bold text-primary">
+                            <Trophy className="h-4 w-4" />
+                            {student.totalScore}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {room.status === 'active' && !showLeaderboard && currentQuestion && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">
@@ -240,6 +320,7 @@ const RoomControl = () => {
                 </CardContent>
               </Card>
             )}
+
             {room.status === 'completed' && (
               <Card>
                 <CardContent className="py-16 text-center">
@@ -251,7 +332,7 @@ const RoomControl = () => {
             )}
           </div>
 
-          {/* Participants */}
+          {/* Participants with scores */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -264,23 +345,23 @@ const RoomControl = () => {
                 <p className="text-sm text-muted-foreground">Még senki nem csatlakozott.</p>
               ) : (
                 <div className="space-y-2">
-                  {participants.map((p) => {
-                    const studentAnswers = answers.filter((a) => a.participant_id === p.id);
-                    const correctCount = studentAnswers.filter((a) => a.is_correct).length;
-                    return (
-                      <div key={p.id} className="flex items-center justify-between rounded-lg border p-2.5">
-                        <span className="font-medium">{p.student_name}</span>
-                        {room.status !== 'waiting' && (
-                          <div className="flex items-center gap-1 text-sm">
+                  {leaderboard.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between rounded-lg border p-2.5">
+                      <span className="font-medium">{p.student_name}</span>
+                      {room.status !== 'waiting' && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <div className="flex items-center gap-1">
                             <CheckCircle2 className="h-3.5 w-3.5 text-quiz-green" />
-                            <span>{correctCount}</span>
-                            <XCircle className="ml-1 h-3.5 w-3.5 text-destructive" />
-                            <span>{studentAnswers.length - correctCount}</span>
+                            <span>{p.correctCount}</span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <div className="flex items-center gap-1 font-bold text-primary">
+                            <Trophy className="h-3.5 w-3.5" />
+                            {p.totalScore}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>

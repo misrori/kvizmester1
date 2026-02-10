@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import QuizEditor from "./pages/QuizEditor";
+import AIGenerate from "./pages/AIGenerate";
 import CreateRoom from "./pages/CreateRoom";
 import RoomControl from "./pages/RoomControl";
 import JoinRoom from "./pages/JoinRoom";
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/quiz/new" element={<QuizEditor />} />
           <Route path="/quiz/:id/edit" element={<QuizEditor />} />
+          <Route path="/ai-generate" element={<AIGenerate />} />
           <Route path="/room/new" element={<CreateRoom />} />
           <Route path="/room/:id" element={<RoomControl />} />
           <Route path="/join" element={<JoinRoom />} />

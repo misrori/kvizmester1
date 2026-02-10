@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Clock, CheckCircle2, Users, Zap, Send } from 'lucide-react';
-import type { Room, Quiz, QuizQuestion, RoomParticipant, ANSWER_COLORS } from '@/types/quiz';
+import { Clock, CheckCircle2, Users, Zap, Send, Trophy } from 'lucide-react';
+import type { Room, Quiz, QuizQuestion, RoomParticipant } from '@/types/quiz';
 
 const COLORS = [
   { bg: 'bg-quiz-red', icon: '▲', label: 'A' },
@@ -16,6 +16,12 @@ const COLORS = [
   { bg: 'bg-primary', icon: '★', label: 'E' },
   { bg: 'bg-secondary', icon: '♦', label: 'F' },
 ];
+
+const calculateScore = (isCorrect: boolean, timeTakenMs: number, timeLimitMs: number): number => {
+  if (!isCorrect) return 0;
+  const timeRatio = Math.max(0, 1 - timeTakenMs / timeLimitMs);
+  return Math.round(100 + timeRatio * 900); // 100-1000 points
+};
 
 const PlayQuiz = () => {
   const { roomId } = useParams();
@@ -28,9 +34,10 @@ const PlayQuiz = () => {
   const [textAnswer, setTextAnswer] = useState('');
   const [answered, setAnswered] = useState(false);
   const [answerCorrect, setAnswerCorrect] = useState<boolean | null>(null);
+  const [earnedScore, setEarnedScore] = useState(0);
   const [timer, setTimer] = useState(0);
   const [questionStartTime, setQuestionStartTime] = useState(0);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(-1);
+  const currentQIndexRef = useRef(-1);
 
   const participantId = sessionStorage.getItem('participant_id');
   const studentName = sessionStorage.getItem('student_name');
@@ -58,7 +65,9 @@ const PlayQuiz = () => {
       return;
     }
 
-    setRoom(roomData as unknown as Room);
+    const roomTyped = roomData as unknown as Room;
+    setRoom(roomTyped);
+    currentQIndexRef.current = roomTyped.current_question_index;
 
     const [quizRes, partRes] = await Promise.all([
       supabase.from('quizzes').select('*').eq('id', roomData.quiz_id).single(),
@@ -72,7 +81,7 @@ const PlayQuiz = () => {
     setLoading(false);
   };
 
-  // Real-time subscription for room changes
+  // Real-time subscription for room changes - NO dependency on currentQuestionIndex
   useEffect(() => {
     if (!roomId) return;
 
@@ -83,12 +92,13 @@ const PlayQuiz = () => {
         setRoom(newRoom);
 
         // Reset answer state when question changes
-        if (newRoom.current_question_index !== currentQuestionIndex) {
+        if (newRoom.current_question_index !== currentQIndexRef.current) {
+          currentQIndexRef.current = newRoom.current_question_index;
           setAnswered(false);
           setSelectedAnswer(null);
           setTextAnswer('');
           setAnswerCorrect(null);
-          setCurrentQuestionIndex(newRoom.current_question_index);
+          setEarnedScore(0);
           setQuestionStartTime(Date.now());
         }
       })
@@ -100,7 +110,7 @@ const PlayQuiz = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [roomId, currentQuestionIndex]);
+  }, [roomId]);
 
   // Timer countdown
   useEffect(() => {
@@ -135,11 +145,13 @@ const PlayQuiz = () => {
         .select('*')
         .eq('participant_id', participantId)
         .eq('question_index', room.current_question_index)
+        .eq('room_id', room.id)
         .maybeSingle();
 
       if (data) {
         setAnswered(true);
         setAnswerCorrect(data.is_correct);
+        setEarnedScore((data as any).score || 0);
       }
     };
     checkExistingAnswer();
@@ -165,6 +177,8 @@ const PlayQuiz = () => {
     }
 
     const timeTaken = Date.now() - questionStartTime;
+    const timeLimitMs = (question.timeLimit || room.time_limit_seconds || 15) * 1000;
+    const score = calculateScore(isCorrect, timeTaken, timeLimitMs);
 
     const { error } = await supabase.from('quiz_answers').insert({
       room_id: room.id,
@@ -173,6 +187,7 @@ const PlayQuiz = () => {
       answer: JSON.parse(JSON.stringify(answerData)),
       is_correct: isCorrect,
       time_taken_ms: timeTaken,
+      score,
     } as any);
 
     if (error) {
@@ -182,17 +197,20 @@ const PlayQuiz = () => {
 
     setAnswered(true);
     setAnswerCorrect(isCorrect);
+    setEarnedScore(score);
 
     // In auto mode, advance to next question
     if (room.control_mode === 'auto') {
       const nextIndex = room.current_question_index + 1;
       if (nextIndex < quiz.questions.length) {
         setTimeout(() => {
+          currentQIndexRef.current = nextIndex;
           setRoom((prev) => prev ? { ...prev, current_question_index: nextIndex } : prev);
           setAnswered(false);
           setSelectedAnswer(null);
           setTextAnswer('');
           setAnswerCorrect(null);
+          setEarnedScore(0);
           setQuestionStartTime(Date.now());
         }, 1500);
       }
@@ -213,19 +231,13 @@ const PlayQuiz = () => {
   if (room.status === 'waiting') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-primary/20 via-background to-secondary/20 p-4">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="text-center"
-        >
+        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary">
             <Zap className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="font-display text-3xl font-bold text-foreground">Várakozás...</h1>
           <p className="mt-2 text-muted-foreground">A tanár hamarosan elindítja a kvízt</p>
-          <div className="mt-6 font-display text-5xl font-black tracking-widest text-primary animate-pulse-slow">
-            {room.code}
-          </div>
+          <div className="mt-6 font-display text-5xl font-black tracking-widest text-primary animate-pulse-slow">{room.code}</div>
           <div className="mt-6 flex items-center justify-center gap-2 text-muted-foreground">
             <Users className="h-5 w-5" />
             <span>{participants.length} résztvevő</span>
@@ -245,11 +257,7 @@ const PlayQuiz = () => {
   if (room.status === 'completed') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-quiz-green/20 via-background to-primary/10 p-4">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="text-center"
-        >
+        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center">
           <CheckCircle2 className="mx-auto mb-4 h-20 w-20 text-quiz-green" />
           <h1 className="font-display text-3xl font-bold">Kvíz vége!</h1>
           <p className="mt-2 text-muted-foreground">Köszönjük a részvételt!</p>
@@ -305,11 +313,19 @@ const PlayQuiz = () => {
               <motion.div
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className={`mb-4 rounded-xl p-4 text-center text-lg font-bold text-primary-foreground ${
+                className={`mb-4 rounded-xl p-4 text-center text-primary-foreground ${
                   answerCorrect ? 'bg-quiz-green' : 'bg-destructive'
                 }`}
               >
-                {answerCorrect ? '✓ Helyes válasz!' : '✗ Helytelen válasz'}
+                <div className="text-lg font-bold">
+                  {answerCorrect ? '✓ Helyes válasz!' : '✗ Helytelen válasz'}
+                </div>
+                {earnedScore > 0 && (
+                  <div className="mt-1 flex items-center justify-center gap-1 text-sm">
+                    <Trophy className="h-4 w-4" />
+                    +{earnedScore} pont
+                  </div>
+                )}
               </motion.div>
             )}
 

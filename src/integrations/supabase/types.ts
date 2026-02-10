@@ -47,6 +47,7 @@ export type Database = {
           participant_id: string
           question_index: number
           room_id: string
+          score: number
           time_taken_ms: number | null
         }
         Insert: {
@@ -57,6 +58,7 @@ export type Database = {
           participant_id: string
           question_index: number
           room_id: string
+          score?: number
           time_taken_ms?: number | null
         }
         Update: {
@@ -67,6 +69,7 @@ export type Database = {
           participant_id?: string
           question_index?: number
           room_id?: string
+          score?: number
           time_taken_ms?: number | null
         }
         Relationships: [
@@ -98,6 +101,7 @@ export type Database = {
           subject: string | null
           teacher_id: string
           title: string
+          topic: string | null
           updated_at: string
         }
         Insert: {
@@ -111,6 +115,7 @@ export type Database = {
           subject?: string | null
           teacher_id: string
           title: string
+          topic?: string | null
           updated_at?: string
         }
         Update: {
@@ -124,6 +129,7 @@ export type Database = {
           subject?: string | null
           teacher_id?: string
           title?: string
+          topic?: string | null
           updated_at?: string
         }
         Relationships: [

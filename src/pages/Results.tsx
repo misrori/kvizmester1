@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Download, Trophy, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, Download, Trophy, CheckCircle2 } from 'lucide-react';
 import type { Room, Quiz, QuizQuestion, RoomParticipant, QuizAnswer } from '@/types/quiz';
 
 const Results = () => {
@@ -59,6 +59,7 @@ const Results = () => {
       const studentAnswers = answers.filter((a) => a.participant_id === p.id);
       const correct = studentAnswers.filter((a) => a.is_correct).length;
       const total = quiz?.questions.length || 0;
+      const totalScore = studentAnswers.reduce((sum, a) => sum + ((a as any).score || 0), 0);
       const avgTime = studentAnswers.length > 0
         ? Math.round(studentAnswers.reduce((sum, a) => sum + (a.time_taken_ms || 0), 0) / studentAnswers.length / 1000 * 10) / 10
         : 0;
@@ -66,11 +67,12 @@ const Results = () => {
         ...p,
         correct,
         total,
+        totalScore,
         percentage: total > 0 ? Math.round((correct / total) * 100) : 0,
         avgTime,
         answered: studentAnswers.length,
       };
-    }).sort((a, b) => b.correct - a.correct || a.avgTime - b.avgTime);
+    }).sort((a, b) => b.totalScore - a.totalScore || a.avgTime - b.avgTime);
   };
 
   const studentResults = getStudentResults();
@@ -133,7 +135,7 @@ const Results = () => {
               return (
                 <div key={student.id} className="flex flex-col items-center">
                   <span className="mb-2 font-display text-sm font-bold">{student.student_name}</span>
-                  <span className="mb-1 text-xs text-muted-foreground">{student.correct}/{student.total}</span>
+                  <span className="mb-1 text-xs text-muted-foreground">{student.totalScore} pont</span>
                   <div className={`flex w-20 items-end justify-center rounded-t-lg ${heights[i]} ${colors[i]} text-primary-foreground`}>
                     <div className="pb-2 text-center">
                       {i === 1 && <Trophy className="mx-auto mb-1 h-5 w-5" />}
@@ -152,10 +154,9 @@ const Results = () => {
             <CardTitle>Részletes eredmények</CardTitle>
             {isTeacher && (
               <Button variant="outline" size="sm" onClick={() => {
-                // Simple CSV export
                 const csv = [
-                  'Név,Helyes,Összes,Százalék,Átlag idő (mp)',
-                  ...studentResults.map((s) => `${s.student_name},${s.correct},${s.total},${s.percentage}%,${s.avgTime}s`),
+                  'Név,Helyes,Összes,Százalék,Pontszám,Átlag idő (mp)',
+                  ...studentResults.map((s) => `${s.student_name},${s.correct},${s.total},${s.percentage}%,${s.totalScore},${s.avgTime}s`),
                 ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv' });
                 const url = URL.createObjectURL(blob);
@@ -176,7 +177,7 @@ const Results = () => {
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>Név</TableHead>
                   <TableHead className="text-center">Helyes</TableHead>
-                  <TableHead className="text-center">Válaszolt</TableHead>
+                  <TableHead className="text-center">Pontszám</TableHead>
                   <TableHead className="text-center">Százalék</TableHead>
                   <TableHead className="text-center">Átlag idő</TableHead>
                 </TableRow>
@@ -189,10 +190,15 @@ const Results = () => {
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         <CheckCircle2 className="h-4 w-4 text-quiz-green" />
-                        {student.correct}
+                        {student.correct}/{student.total}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">{student.answered}/{student.total}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1 font-bold text-primary">
+                        <Trophy className="h-4 w-4" />
+                        {student.totalScore}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-center">
                       <Badge variant={student.percentage >= 70 ? 'default' : student.percentage >= 40 ? 'secondary' : 'destructive'}>
                         {student.percentage}%
