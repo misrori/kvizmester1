@@ -13,6 +13,7 @@ import RoomControl from "./pages/RoomControl";
 import JoinRoom from "./pages/JoinRoom";
 import PlayQuiz from "./pages/PlayQuiz";
 import Results from "./pages/Results";
+import PresenterView from "./pages/PresenterView";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/join/:code" element={<JoinRoom />} />
           <Route path="/play/:roomId" element={<PlayQuiz />} />
           <Route path="/results/:roomId" element={<Results />} />
+          <Route path="/presenter/:id" element={<PresenterView />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -20,7 +20,10 @@ FONTOS SZABÁLYOK:
 - A helyes válasz mindig pontosan egy legyen multiple-choice esetén
 - A válaszlehetőségek legyenek hasonlóak, hogy ne legyen nyilvánvaló a helyes válasz
 - Magyar nyelven generálj mindent
-- Az id mezőkhöz használj UUID v4 formátumot (pl. "a1b2c3d4-e5f6-7890-abcd-ef1234567890")`;
+- Az id mezőkhöz használj UUID v4 formátumot (pl. "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+- Ha egy kérdéshez jól illeszkedne egy illusztráció (pl. térkép, ábra, természeti jelenség, történelmi esemény), adj meg egy releváns imageUrl-t. Használj publikus, ingyenes képforrásokat (pl. Wikimedia Commons, Unsplash). A kép legyen valódi, elérhető URL.
+- NE adj minden kérdéshez képet - csak akkor, ha a kép tényleg segít megérteni a kérdést vagy vizuálisan releváns.
+- Ha nem találsz megfelelő képet, hagyd üresen az imageUrl mezőt.`;
 
     const userPrompt = `Generálj egy kvízt az alábbi paraméterekkel:
 - Tantárgy: ${subject}
@@ -28,7 +31,7 @@ FONTOS SZABÁLYOK:
 - Évfolyam: ${gradeLevel || "általános"}
 - Kérdések száma: ${numQuestions}
 
-Minden kérdéshez 4 válaszlehetőséget adj meg.`;
+Minden kérdéshez 4 válaszlehetőséget adj meg. Ha releváns, adj hozzá képet is (imageUrl).`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -61,6 +64,7 @@ Minden kérdéshez 4 válaszlehetőséget adj meg.`;
                         id: { type: "string", description: "Unique UUID for the question" },
                         type: { type: "string", enum: ["multiple-choice", "text-input"] },
                         text: { type: "string", description: "The question text" },
+                        imageUrl: { type: "string", description: "Optional URL to an illustrative image for this question. Only include if truly relevant." },
                         timeLimit: { type: "number", description: "Time limit in seconds (10-30)" },
                         options: {
                           type: "array",

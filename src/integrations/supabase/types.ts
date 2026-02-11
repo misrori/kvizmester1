@@ -48,6 +48,7 @@ export type Database = {
           question_index: number
           room_id: string
           score: number
+          session_number: number
           time_taken_ms: number | null
         }
         Insert: {
@@ -59,6 +60,7 @@ export type Database = {
           question_index: number
           room_id: string
           score?: number
+          session_number?: number
           time_taken_ms?: number | null
         }
         Update: {
@@ -70,6 +72,7 @@ export type Database = {
           question_index?: number
           room_id?: string
           score?: number
+          session_number?: number
           time_taken_ms?: number | null
         }
         Relationships: [
@@ -189,6 +192,7 @@ export type Database = {
           id: string
           notes: string | null
           quiz_id: string
+          session_number: number
           show_results_to_students: boolean
           started_at: string | null
           status: string
@@ -206,6 +210,7 @@ export type Database = {
           id?: string
           notes?: string | null
           quiz_id: string
+          session_number?: number
           show_results_to_students?: boolean
           started_at?: string | null
           status?: string
@@ -223,6 +228,7 @@ export type Database = {
           id?: string
           notes?: string | null
           quiz_id?: string
+          session_number?: number
           show_results_to_students?: boolean
           started_at?: string | null
           status?: string

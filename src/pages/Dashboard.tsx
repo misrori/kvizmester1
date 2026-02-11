@@ -65,15 +65,16 @@ const Dashboard = () => {
   };
 
   const restartRoom = async (roomId: string) => {
-    await Promise.all([
-      supabase.from('quiz_answers').delete().eq('room_id', roomId),
-      supabase.from('room_participants').delete().eq('room_id', roomId),
-    ]);
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const newSession = ((room as any).session_number || 1) + 1;
+    await supabase.from('room_participants').update({ is_active: false }).eq('room_id', roomId);
     await supabase.from('rooms').update({
       status: 'waiting',
       current_question_index: 0,
       started_at: null,
       ended_at: null,
+      session_number: newSession,
     }).eq('id', roomId);
     setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, status: 'waiting' as const } : r));
     toast.success('Szoba újraindítva!');

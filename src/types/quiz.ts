@@ -41,6 +41,7 @@ export interface Room {
   time_limit_seconds: number;
   show_results_to_students: boolean;
   current_question_index: number;
+  session_number: number;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -63,6 +64,8 @@ export interface QuizAnswer {
   answer: Record<string, unknown>;
   is_correct: boolean | null;
   time_taken_ms: number | null;
+  score: number;
+  session_number: number;
   answered_at: string;
 }
 

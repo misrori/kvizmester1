@@ -20,7 +20,7 @@ const COLORS = [
 const calculateScore = (isCorrect: boolean, timeTakenMs: number, timeLimitMs: number): number => {
   if (!isCorrect) return 0;
   const timeRatio = Math.max(0, 1 - timeTakenMs / timeLimitMs);
-  return Math.round(100 + timeRatio * 900); // 100-1000 points
+  return Math.round(100 + timeRatio * 900);
 };
 
 const PlayQuiz = () => {
@@ -81,7 +81,7 @@ const PlayQuiz = () => {
     setLoading(false);
   };
 
-  // Real-time subscription for room changes - NO dependency on currentQuestionIndex
+  // Real-time subscription
   useEffect(() => {
     if (!roomId) return;
 
@@ -91,7 +91,6 @@ const PlayQuiz = () => {
         const newRoom = payload.new as unknown as Room;
         setRoom(newRoom);
 
-        // Reset answer state when question changes
         if (newRoom.current_question_index !== currentQIndexRef.current) {
           currentQIndexRef.current = newRoom.current_question_index;
           setAnswered(false);
@@ -124,10 +123,7 @@ const PlayQuiz = () => {
 
     const interval = setInterval(() => {
       setTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(interval); return 0; }
         return prev - 1;
       });
     }, 1000);
@@ -146,6 +142,7 @@ const PlayQuiz = () => {
         .eq('participant_id', participantId)
         .eq('question_index', room.current_question_index)
         .eq('room_id', room.id)
+        .eq('session_number', room.session_number)
         .maybeSingle();
 
       if (data) {
@@ -188,6 +185,7 @@ const PlayQuiz = () => {
       is_correct: isCorrect,
       time_taken_ms: timeTaken,
       score,
+      session_number: room.session_number,
     } as any);
 
     if (error) {
@@ -199,7 +197,6 @@ const PlayQuiz = () => {
     setAnswerCorrect(isCorrect);
     setEarnedScore(score);
 
-    // In auto mode, advance to next question
     if (room.control_mode === 'auto') {
       const nextIndex = room.current_question_index + 1;
       if (nextIndex < quiz.questions.length) {
@@ -306,6 +303,13 @@ const PlayQuiz = () => {
               <h2 className="font-display text-xl font-bold text-card-foreground md:text-2xl">
                 {question.text}
               </h2>
+              {question.imageUrl && (
+                <img
+                  src={question.imageUrl}
+                  alt="Kérdés kép"
+                  className="mx-auto mt-4 max-h-48 rounded-lg object-contain"
+                />
+              )}
             </div>
 
             {/* Answer Feedback */}
