@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Download, Trophy, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Download, Trophy, CheckCircle2, History } from 'lucide-react';
 import type { Room, Quiz, QuizQuestion, RoomParticipant, QuizAnswer } from '@/types/quiz';
 
 const Results = () => {
@@ -16,9 +17,10 @@ const Results = () => {
   const navigate = useNavigate();
   const [room, setRoom] = useState<Room | null>(null);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
-  const [participants, setParticipants] = useState<RoomParticipant[]>([]);
-  const [answers, setAnswers] = useState<QuizAnswer[]>([]);
+  const [allParticipants, setAllParticipants] = useState<RoomParticipant[]>([]);
+  const [allAnswers, setAllAnswers] = useState<QuizAnswer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSession, setSelectedSession] = useState<number | null>(null);
 
   useEffect(() => {
     if (!roomId) return;
@@ -30,12 +32,11 @@ const Results = () => {
         .eq('id', roomId)
         .single();
 
-      if (!roomData) {
-        navigate('/');
-        return;
-      }
+      if (!roomData) { navigate('/'); return; }
 
-      setRoom(roomData as unknown as Room);
+      const rm = roomData as unknown as Room;
+      setRoom(rm);
+      setSelectedSession(rm.session_number);
 
       const [quizRes, partRes, ansRes] = await Promise.all([
         supabase.from('quizzes').select('*').eq('id', roomData.quiz_id).single(),
@@ -43,20 +44,25 @@ const Results = () => {
         supabase.from('quiz_answers').select('*').eq('room_id', roomId).order('answered_at'),
       ]);
 
-      if (quizRes.data) {
-        setQuiz({ ...quizRes.data, questions: quizRes.data.questions as unknown as QuizQuestion[] } as Quiz);
-      }
-      if (partRes.data) setParticipants(partRes.data as unknown as RoomParticipant[]);
-      if (ansRes.data) setAnswers(ansRes.data as unknown as QuizAnswer[]);
+      if (quizRes.data) setQuiz({ ...quizRes.data, questions: quizRes.data.questions as unknown as QuizQuestion[] } as Quiz);
+      if (partRes.data) setAllParticipants(partRes.data as unknown as RoomParticipant[]);
+      if (ansRes.data) setAllAnswers(ansRes.data as unknown as QuizAnswer[]);
       setLoading(false);
     };
 
     fetchData();
   }, [roomId, navigate]);
 
-  const getStudentResults = () => {
-    return participants.map((p) => {
-      const studentAnswers = answers.filter((a) => a.participant_id === p.id);
+  // Get unique session numbers
+  const sessions = Array.from(new Set(allAnswers.map((a) => (a as any).session_number || 1))).sort((a, b) => b - a);
+
+  const getStudentResults = (sessionNum: number) => {
+    const sessionAnswers = allAnswers.filter((a) => ((a as any).session_number || 1) === sessionNum);
+    const participantIds = new Set(sessionAnswers.map((a) => a.participant_id));
+    const sessionParticipants = allParticipants.filter((p) => participantIds.has(p.id));
+
+    return sessionParticipants.map((p) => {
+      const studentAnswers = sessionAnswers.filter((a) => a.participant_id === p.id);
       const correct = studentAnswers.filter((a) => a.is_correct).length;
       const total = quiz?.questions.length || 0;
       const totalScore = studentAnswers.reduce((sum, a) => sum + ((a as any).score || 0), 0);
@@ -75,8 +81,39 @@ const Results = () => {
     }).sort((a, b) => b.totalScore - a.totalScore || a.avgTime - b.avgTime);
   };
 
-  const studentResults = getStudentResults();
+  const exportCSV = (sessionNum: number) => {
+    const results = getStudentResults(sessionNum);
+    const sessionAnswers = allAnswers.filter((a) => ((a as any).session_number || 1) === sessionNum);
+
+    // Detailed per-question export
+    const headers = ['Név', 'Kérdés #', 'Kérdés', 'Válasz', 'Helyes?', 'Pontszám', 'Idő (ms)', 'Időpont'];
+    const rows = sessionAnswers.map((ans) => {
+      const participant = allParticipants.find((p) => p.id === ans.participant_id);
+      const question = quiz?.questions[ans.question_index];
+      const answerText = (ans.answer as any)?.text || question?.options.find((o: any) => o.id === (ans.answer as any)?.selectedOptionId)?.text || '';
+      return [
+        participant?.student_name || '',
+        ans.question_index + 1,
+        question?.text || '',
+        answerText,
+        ans.is_correct ? 'Igen' : 'Nem',
+        (ans as any).score || 0,
+        ans.time_taken_ms || '',
+        ans.answered_at,
+      ].join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eredmenyek-${room?.code}-session${sessionNum}.csv`;
+    a.click();
+  };
+
   const isTeacher = user && room && user.id === room.teacher_id;
+  const currentSessionResults = selectedSession ? getStudentResults(selectedSession) : [];
 
   if (loading) {
     return (
@@ -113,7 +150,7 @@ const Results = () => {
           </Card>
           <Card>
             <CardContent className="py-6 text-center">
-              <div className="font-display text-3xl font-bold text-foreground">{participants.length}</div>
+              <div className="font-display text-3xl font-bold text-foreground">{currentSessionResults.length}</div>
               <p className="mt-1 text-sm text-muted-foreground">Résztvevő</p>
             </CardContent>
           </Card>
@@ -125,10 +162,26 @@ const Results = () => {
           </Card>
         </div>
 
+        {/* Session selector */}
+        {sessions.length > 1 && (
+          <div className="mb-6">
+            <Tabs value={String(selectedSession)} onValueChange={(v) => setSelectedSession(Number(v))}>
+              <TabsList>
+                {sessions.map((s) => (
+                  <TabsTrigger key={s} value={String(s)} className="flex items-center gap-1">
+                    <History className="h-3 w-3" />
+                    {s}. menet
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        )}
+
         {/* Top 3 Podium */}
-        {studentResults.length >= 3 && (
+        {currentSessionResults.length >= 3 && (
           <div className="mb-8 flex items-end justify-center gap-4">
-            {[studentResults[1], studentResults[0], studentResults[2]].map((student, i) => {
+            {[currentSessionResults[1], currentSessionResults[0], currentSessionResults[2]].map((student, i) => {
               const heights = ['h-24', 'h-32', 'h-20'];
               const positions = ['2.', '1.', '3.'];
               const colors = ['bg-secondary', 'bg-accent', 'bg-primary'];
@@ -152,19 +205,8 @@ const Results = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Részletes eredmények</CardTitle>
-            {isTeacher && (
-              <Button variant="outline" size="sm" onClick={() => {
-                const csv = [
-                  'Név,Helyes,Összes,Százalék,Pontszám,Átlag idő (mp)',
-                  ...studentResults.map((s) => `${s.student_name},${s.correct},${s.total},${s.percentage}%,${s.totalScore},${s.avgTime}s`),
-                ].join('\n');
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `eredmenyek-${room.code}.csv`;
-                a.click();
-              }}>
+            {isTeacher && selectedSession && (
+              <Button variant="outline" size="sm" onClick={() => exportCSV(selectedSession)}>
                 <Download className="mr-2 h-4 w-4" />
                 CSV letöltés
               </Button>
@@ -183,7 +225,7 @@ const Results = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {studentResults.map((student, i) => (
+                {currentSessionResults.map((student, i) => (
                   <TableRow key={student.id}>
                     <TableCell className="font-bold">{i + 1}.</TableCell>
                     <TableCell className="font-medium">{student.student_name}</TableCell>

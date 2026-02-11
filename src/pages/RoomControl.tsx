@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Navbar } from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Play, Square, SkipForward, Copy, Users, ArrowLeft, CheckCircle2, XCircle, Trophy, BarChart3, RefreshCw } from 'lucide-react';
+import { Play, Square, SkipForward, Copy, Users, ArrowLeft, CheckCircle2, XCircle, Trophy, BarChart3, RefreshCw, Monitor } from 'lucide-react';
 import type { Room, Quiz, QuizQuestion, RoomParticipant, QuizAnswer } from '@/types/quiz';
 
 const RoomControl = () => {
@@ -36,12 +36,13 @@ const RoomControl = () => {
       return;
     }
 
-    setRoom(roomData as unknown as Room);
+    const rm = roomData as unknown as Room;
+    setRoom(rm);
 
     const [quizRes, partRes, ansRes] = await Promise.all([
       supabase.from('quizzes').select('*').eq('id', roomData.quiz_id).single(),
       supabase.from('room_participants').select('*').eq('room_id', id).order('joined_at'),
-      supabase.from('quiz_answers').select('*').eq('room_id', id),
+      supabase.from('quiz_answers').select('*').eq('room_id', id).eq('session_number', rm.session_number),
     ]);
 
     if (quizRes.data) {
@@ -72,17 +73,25 @@ const RoomControl = () => {
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_answers', filter: `room_id=eq.${id}` }, () => {
-        supabase.from('quiz_answers').select('*').eq('room_id', id).then(({ data }) => {
-          if (data) setAnswers(data as unknown as QuizAnswer[]);
-        });
+        // Re-fetch only current session answers
+        if (room) {
+          supabase.from('quiz_answers').select('*').eq('room_id', id).eq('session_number', room.session_number).then(({ data }) => {
+            if (data) setAnswers(data as unknown as QuizAnswer[]);
+          });
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${id}` }, (payload) => {
-        setRoom(payload.new as unknown as Room);
+        const newRoom = payload.new as unknown as Room;
+        setRoom(newRoom);
+        // Re-fetch answers for new session if session changed
+        supabase.from('quiz_answers').select('*').eq('room_id', id).eq('session_number', newRoom.session_number).then(({ data }) => {
+          if (data) setAnswers(data as unknown as QuizAnswer[]);
+        });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [id]);
+  }, [id, room?.session_number]);
 
   const startQuiz = async () => {
     if (!room) return;
@@ -119,17 +128,16 @@ const RoomControl = () => {
 
   const restartRoom = async () => {
     if (!room) return;
-    // Delete old answers and participants
-    await Promise.all([
-      supabase.from('quiz_answers').delete().eq('room_id', room.id),
-      supabase.from('room_participants').delete().eq('room_id', room.id),
-    ]);
-    // Reset room state
+    const newSession = (room.session_number || 1) + 1;
+    // Deactivate old participants instead of deleting
+    await supabase.from('room_participants').update({ is_active: false }).eq('room_id', room.id);
+    // Reset room state with incremented session number
     await supabase.from('rooms').update({
       status: 'waiting',
       current_question_index: 0,
       started_at: null,
       ended_at: null,
+      session_number: newSession,
     }).eq('id', room.id);
     setAnswers([]);
     setParticipants([]);
@@ -143,9 +151,10 @@ const RoomControl = () => {
     toast.success('Szobakód másolva: ' + room.code);
   };
 
-  // Calculate leaderboard
+  // Calculate leaderboard from current session only
   const getLeaderboard = () => {
-    return participants.map((p) => {
+    const activeParticipants = participants.filter((p) => p.is_active);
+    return activeParticipants.map((p) => {
       const studentAnswers = answers.filter((a) => a.participant_id === p.id);
       const totalScore = studentAnswers.reduce((sum, a) => sum + ((a as any).score || 0), 0);
       const correctCount = studentAnswers.filter((a) => a.is_correct).length;
@@ -198,6 +207,13 @@ const RoomControl = () => {
             {totalParticipants} diák
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
+            {/* Presenter View link */}
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/presenter/${room.id}`} target="_blank">
+                <Monitor className="mr-1 h-4 w-4" />
+                Kivetítés
+              </Link>
+            </Button>
             {room.status === 'waiting' && (
               <Button onClick={startQuiz} disabled={totalParticipants === 0}>
                 <Play className="mr-2 h-4 w-4" />
@@ -229,7 +245,7 @@ const RoomControl = () => {
                   Újraindítás
                 </Button>
                 <Button variant="outline" asChild>
-                  <a href={`/results/${room.id}`}>Eredmények</a>
+                  <Link to={`/results/${room.id}`}>Eredmények</Link>
                 </Button>
               </>
             )}
@@ -291,7 +307,10 @@ const RoomControl = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="mb-6 text-xl font-medium">{currentQuestion.text}</p>
+                  <p className="mb-4 text-xl font-medium">{currentQuestion.text}</p>
+                  {currentQuestion.imageUrl && (
+                    <img src={currentQuestion.imageUrl} alt="Kérdés kép" className="mb-4 max-h-48 rounded-lg object-contain" />
+                  )}
                   {currentQuestion.type === 'multiple-choice' && (
                     <div className="grid gap-3 sm:grid-cols-2">
                       {currentQuestion.options.map((opt, i) => {
@@ -341,7 +360,7 @@ const RoomControl = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {participants.length === 0 ? (
+              {participants.filter(p => p.is_active).length === 0 ? (
                 <p className="text-sm text-muted-foreground">Még senki nem csatlakozott.</p>
               ) : (
                 <div className="space-y-2">
