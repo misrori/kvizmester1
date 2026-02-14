@@ -10,7 +10,7 @@ serve(async (req) => {
 
   try {
     const { subject, topic, numQuestions, gradeLevel } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_API_KEY = (Deno.env.get("OPENAI_API_KEY") || "").trim();
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
     const systemPrompt = `Te egy oktatási kvíz generátor AI vagy. A felhasználó megadja a tantárgyat, témakört, évfolyamot és a kérdések számát. Generálj egy kvízt a megadott paraméterek alapján.
@@ -36,8 +36,8 @@ Minden kérdéshez 4 válaszlehetőséget adj meg. Ha releváns, adj hozzá kép
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
+        "Authorization": "Bearer " + OPENAI_API_KEY,
       },
       body: JSON.stringify({
         model: "gpt-4o",
@@ -100,15 +100,9 @@ Minden kérdéshez 4 válaszlehetőséget adj meg. Ha releváns, adj hozzá kép
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Fizetés szükséges, töltsd fel az egyenleged." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       const t = await response.text();
       console.error("OpenAI API error:", response.status, t);
-      return new Response(JSON.stringify({ error: "AI hiba történt" }), {
+      return new Response(JSON.stringify({ error: "AI hiba történt: " + response.status }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
