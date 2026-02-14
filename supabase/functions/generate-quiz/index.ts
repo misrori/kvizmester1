@@ -10,8 +10,11 @@ serve(async (req) => {
 
   try {
     const { subject, topic, numQuestions, gradeLevel } = await req.json();
-    const OPENAI_API_KEY = (Deno.env.get("OPENAI_API_KEY") || "").trim();
+    // Strip any non-ASCII / invisible characters from the key
+    const rawKey = Deno.env.get("OPENAI_API_KEY") || "";
+    const OPENAI_API_KEY = rawKey.replace(/[^\x20-\x7E]/g, "").trim();
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    console.log("API key length:", OPENAI_API_KEY.length, "starts with:", OPENAI_API_KEY.substring(0, 8));
 
     const systemPrompt = `Te egy oktatási kvíz generátor AI vagy. A felhasználó megadja a tantárgyat, témakört, évfolyamot és a kérdések számát. Generálj egy kvízt a megadott paraméterek alapján.
 
